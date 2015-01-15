@@ -1,0 +1,267 @@
+﻿body, html, .container {
+  padding: 0px;
+  margin: 0px;
+  width: 100%;
+  height: 100%;
+  background-color: #888;
+}
+.hidden {
+  display: none;
+}
+
+.unselectable {
+  -moz-user-select: -moz-none;
+  -khtml-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+.button-name {
+  font-family: courier;
+}
+
+.container .big-prev, .container .big-next {
+  z-index: 10;
+  position: fixed;
+  height: 100%;
+  width: 20%;
+  margin: 0;
+  top: 0;
+  font-size: 20pt;
+  color: white;
+  padding: 1ex;
+  opacity: 0.2;
+}
+
+.container .big-prev:hover, .container .big-next:hover {
+  opacity: 0.8;
+}
+.container .big-prev {
+  left: 0;
+  text-align: left;
+}
+.container .big-next {
+  right: 0;
+  text-align: right;
+}
+
+.container .panel {
+  opacity: 0;
+  z-index: 12;
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  left: 0;
+  overflow-x: auto;
+}
+
+.container .panel:hover {
+  opacity: 0.8;
+  background-color: #444;
+}
+
+.container .panel-items {
+  float: left;
+}
+
+.container .panel-item {
+  margin: 2px;
+}
+
+.container .panel-main {
+  width: 32em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.container .warning {
+  float: right;
+  color: #fdd;
+  margin: 1ex;
+}
+
+.container .button {
+  border: 1px solid #888;
+  background-color: #e0e0e0;
+  border-radius: 0.7ex;
+  box-shadow: 0 0 3px white;
+}
+
+.container .button:hover {
+  background-color: #bbb;
+}
+
+.container .field, .container .button-normal, .container .button-small {
+  font-size: 70%;
+  margin: -0.1em 0.2em -0.1em -0.1em;
+}
+
+.container .field {
+  width: 3em;
+  height: 1em;
+}
+
+.container .button-normal {
+  width: 5em;
+}
+
+.container .button-small {
+  width: 2em;
+}
+
+.container  .button-container {
+  font-size: 190%;
+  width: 1.8em;
+  height: 2.5em;
+  float: left;
+}
+
+.container .button-main {
+  font-size: 100%;
+  width: 1.7em;
+  height: 1.7em;
+  margin: 0.2em 0.05em 0 0.05em;
+}
+
+.container  .button-caption {
+  bottom: 0;
+  text-align: center;
+  font-size: 40%;
+  color: white;
+  height: 1em;
+  padding: 1pt;
+  margin: 0;
+}
+
+.update:disabled {
+  box-shadow: 0 0 10px white, 0 0 10px green;
+}
+
+@media all and (orientation : portrait) and (min-width: 700px) {
+
+  .container .panel-main {
+    height: 5em;
+  }
+
+  .container .panel-main {
+    width: 45em;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .container .panel-items, .container  .button-caption, .warning {
+    display: none;
+  }
+
+  .container  .button-container {
+    width: 2.5em;
+    height: 2.5em;
+    margin-bottom: 0.2em;
+  }
+
+  .container .button-main {
+    font-size: 150%;
+    width: 1.5em;
+    height: 1.5em;
+    margin-bottom: 0.2em;
+  }
+
+}
+
+@media all and (max-width: 699px) and (min-width: 400px) {
+
+  .container .panel-main {
+    height: 3em;
+  }
+
+  .container .panel-main {
+    width: 25em;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .container .panel-items, .container  .button-caption, .warning {
+    display: none;
+  }
+
+  .container  .button-container {
+    width: 1.4em;
+    height: 1.4em;
+    margin-bottom: 0.2em;
+  }
+
+  .container .button-main {
+    font-size: 80%;
+    width: 1.4em;
+    height: 1.4em;
+    margin-bottom: 0.2em;
+  }
+    
+}
+
+@media all and (max-width: 399px) {
+
+  .container .panel {
+    display: none;
+  }
+  
+}
+
+.container .info {
+  border-top-left-radius: 1ex;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  font-size: 200%;
+  font-family: courier;
+  font-weight: bold;
+  padding: 7px;
+  z-index: 11;
+  color: rgba(0,0,0,0.7);
+  background-color: rgba(255,255,255,0.2);
+}
+
+.container .info .preload-info {
+  font-size: 60%;
+  text-align: right;
+}
+
+.container .info:hover {
+  background-color: rgba(255,255,255,0.7);
+}
+
+.container .info:empty {
+  display: none;
+}
+
+.container .picture {
+  z-index: 1;
+  position: fixed;
+  top: 0px;
+  left: 0px;
+}
+
+.container .help-container {
+  z-index: 7;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  top: 0;
+}
+
+.container .help {
+  color: white;
+  width: 50%;
+  padding: 1.5em;
+  margin-left: auto;
+  margin-right: auto;
+  opacity: 0.0;
+  max-height: 30%;
+  overflow-y: auto;
+}
+
+.container .help:hover {
+  background-color: #444;
+  opacity: 0.8;
+}
