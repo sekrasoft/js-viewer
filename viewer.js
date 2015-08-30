@@ -166,7 +166,7 @@ Average.prototype.value = function() {
   return this.a / this.n;
 };
 
-var VERSION = '2.0 pre 7';
+var VERSION = '2.0 pre 8';
 var PREFIX = 'sekrasoft-viewer-2-';
 var RELOAD_TIMEOUT = 5000;
 
@@ -499,7 +499,12 @@ ImageShow.prototype.updateInfo = function() {
       text += '<br/><div class="preload-info">&larr;' + p + ' ' +
         ImageLoader.prototype.nowLoading + ' ' + n + '&rarr;</div';
     
-    location.hash = this.id + 1;
+    var hash = '#' + String(this.id + 1);
+    if(window.history && history.replaceState){
+       window.history.replaceState({}, document.title, hash);
+    } else {
+       location.replace(hash);
+    }
   } else if(!this.images.length) {
     text = '';
   } else {
