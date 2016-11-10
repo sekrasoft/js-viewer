@@ -1,6 +1,81 @@
 ﻿(function module(){
 'use strict';
 
+var SEC = 1000;
+
+/**
+ * параметры просмотрщика
+ */
+var parameters = {
+  
+  /////////////////////
+  // ПАРАМЕТРЫ ЗАГРУЗКИ
+  
+  // Время между попытками повторной загрузки картинки/списка картинок
+  RELOAD_TIMEOUT: 5 * SEC,
+  // Количество изображений, загружающихся одновременно по умолчанию
+  // Просмотрщик может регулировать количество изображений
+  DEFAULT_IMAGES_PER_TIME: 2,
+  // Максимальное количество одновременно загружаемых изображений
+  MAX_IMAGES_PER_TIME: 5,
+  // Максимальное количество подгружаемых изображений после текущего
+  MAX_FORWARD_IMAGES: 50,
+  // Максимальное количество подгружаемых изображений до текущего
+  MAX_BACKWARD_IMAGES: 10,
+  // Регулярное выражение для расширений файлов с картинками
+  EXTENSIONS_RE: /(\.jpg|\.png|\.gif|\.jpeg)$/i,
+
+  ////////////////////////
+  // ПАРАМЕТРЫ ОТОБРАЖЕНИЯ
+  
+  // Длительность показа картинки в слайдшоу по умолчанию (в секундах)
+  DEFAULT_SLIDESHOW_DELAY: 1 * SEC,
+  // Период обновления списка картинок по умолчанию (в секундах)
+  // Малое значение удобно для случая, когда картинки добавляются динамически,
+  // например, выкладываются в реальном времени во время некоторого мероприятия
+  DEFAULT_LIST_UPDATE_DELAY: 120 * SEC,
+  // Коэффициент увеличения/уменьшения картинки при нажатии на "+"/"-"
+  ZOOM_SCALE_RATIO: 1.3,
+  
+  /////////////////////
+  // ПАРАМЕТРЫ ЭВРИСТИК
+  
+  // Параметр затухания статистики загрузки изображений
+  // Данные о скольки последних загруженных изображений использовать для расчёта
+  // среднего времени загрузки
+  LOAD_TIME_ACCOUNT_FOR_IMAGES: 6.6,
+  // Параметр затухания статистики задержке между загрузками изображений
+  // Данные о скольки последних загруженных изображений использовать для расчёта
+  // времени между загрузками изображений
+  LOAD_DELAY_ACCOUNT_FOR_IMAGES: 4,
+  // Предсказанное значение времени между загрузками изображений для первого
+  // изображения
+  FIRST_LOAD_DELAY: 10 * SEC,
+  // Максимальное среднее время задержки между загрузками последних изображений,
+  // при увеличении которого эвристика задумывается о загрузке большего
+  // числа изображений одновременно
+  MAX_LAST_LOAD_DELAY: 0.3 * SEC, // для загрузки следующих изображений
+  MAX_LAST_LOAD_DELAY2: 0.5 * SEC, // для загрузки предыдыщих изображений
+  // Минимальное среднее время загрузки загрузками последних изображений,
+  // при уменьшении которого эвристика задумывается о загрузке большего
+  // числа изображений одновременно
+  MIN_LAST_LOAD_TIME: 1 * SEC, // для загрузки следующих изображений
+  MIN_LAST_LOAD_TIME2: 1 * SEC, // для загрузки предыдыщих изображений
+  // Максимальное среднее время загрузки загрузками последних изображений,
+  // при увеличении которого эвристика задумывается о загрузке меньшего
+  // числа изображений одновременно
+  MAX_LAST_LOAD_TIME: 5 * SEC, // для загрузки следующих изображений
+  MAX_LAST_LOAD_TIME2: 5 * SEC, // для загрузки предыдыщих изображений
+  // Коэффициент увеличения количества изображений для загрузки
+  // K: N_new = (N+1)*K
+  LOADING_INC_RATIO: 1.3, // для загрузки следующих изображений
+  LOADING_INC_RATIO2: 1.1, // для загрузки предыдыщих изображений
+  // Коэффициент уменьшения количества изображений для загрузки
+  // K: N_new = N/K-1
+  LOADING_DEC_RATIO: 1.5, // для загрузки следующих изображений
+  LOADING_DEC_RATIO2: 1.5 // для загрузки предыдыщих изображений
+};
+
 // old ECMAScript --------------------------------------------------------------
 
 if(!Array.prototype.forEach) Array.prototype.forEach = function(f){
@@ -130,7 +205,10 @@ function getUI(from) {
 
 // Загрузка значения из полей fields либо из localStorage с последующей
 // синхронизацией между полями
-function loadValue(name, fields) {
+function loadValue(name, fields, defaultValue) {
+  if(defaultValue !== undefined && isFinite(defaultValue))
+    syncFields(fields, defaultValue);
+  
   var value = localStorage.getItem(PREFIX + name);
   if(value && isFinite(+value)){
     syncFields(fields, value);
@@ -166,9 +244,8 @@ Average.prototype.value = function() {
   return this.a / this.n;
 };
 
-var VERSION = '2.0 pre 8';
+var VERSION = '2.0 pre 9';
 var PREFIX = 'sekrasoft-viewer-2-';
-var RELOAD_TIMEOUT = 5000;
 
 // Загрузчик изображения: обёртка над Image с возможностью хранения
 // размеров/масштаба, времени загрузки и т.п.
@@ -187,6 +264,7 @@ function ImageLoader(url) {
   this.time = -1; // время загрузки картинки
 }
 
+// TODO: Почему изменяется ImageLoader.prototype.nowLoading, а не this.nowLoading?
 ImageLoader.prototype.nowLoading = 0;
 
 ImageLoader.prototype.setLoading = function(state) {
@@ -313,13 +391,13 @@ function ImageShow(element, info, width, height) {
   this.url = '';
   this.image = null;
   this.slideshow = 0;
-  this.slideshowDelay = 1000;
-  this.loadTime = new Average(6.6);
-  this.loadDelay = new Average(4);
+  this.slideshowDelay = parameters.DEFAULT_SLIDESHOW_DELAY;
+  this.loadTime = new Average(parameters.LOAD_TIME_ACCOUNT_FOR_IMAGES);
+  this.loadDelay = new Average(parameters.LOAD_DELAY_ACCOUNT_FOR_IMAGES);
   
   this.images = [];
   
-  var that = this, previousLoad = new Date - 10000;
+  var that = this, previousLoad = new Date - parameters.FIRST_LOAD_DELAY;
   // действие при загрузке изображения или изменении количества загружаемых
   this.imageLoaderHandler = function(loader) {
     if(!loader.loaded) {
@@ -329,7 +407,7 @@ function ImageShow(element, info, width, height) {
         loader.load();
         if(that.url === loader.url)
           that.show(loader);
-      }, that.RELOAD_TIMEOUT);
+      }, parameters.RELOAD_TIMEOUT);
     }
     
     if(that.url === loader.url) that.show(loader);
@@ -343,6 +421,10 @@ function ImageShow(element, info, width, height) {
 }
 
 ImageShow.prototype._adjusting = false;
+ImageShow.prototype.forwardImages = 1;
+ImageShow.prototype.backwardImages = 0;
+ImageShow.prototype.imagesPerTime = parameters.DEFAULT_IMAGES_PER_TIME;
+ImageShow.defaultImages = {};
 
 // Подгоняет количество загружаемых изображений
 // в зависимости от условий загрузки
@@ -351,72 +433,74 @@ ImageShow.prototype.adjustImagesNumber = function(byUser) {
   this._adjusting = true;
   
   var time = this.loadTime.value(), delay = this.loadDelay.value();
-  var oldForward = this.FORWARD_IMAGES, oldBackward = this.BACKWARD_IMAGES;
-  var shortQueue = ImageLoader.prototype.nowLoading <= this.IMAGES_PER_TIME;
+  var oldForward = this.forwardImages, oldBackward = this.backwardImages;
+  var shortQueue = ImageLoader.prototype.nowLoading <= this.imagesPerTime;
   var thisIsLoaded = this.images[this.id].loaded;
   
   // Если планируется загрузить не так много картинок или они загружались давно
-  // (более 300мс назад, т.е. сервер не очень нагружается) и при этом
-  // они загружаются быстро (менее секунды в среднем за последнее время) или
-  // многие уже загрузились и сейчас загрузчик почти простаивает, то можно
-  // увеличить количество загружаемых изображений. Скорее всего, ни браузер, ни
-  // сервер не будет в печали.
-  if ((delay > 300 || this.FORWARD_IMAGES <= this.MAX_IMAGES_PER_TIME) &&
-    (time < 1000 || shortQueue)) {
+  // (более MAX_LAST_LOAD_DELAYмс назад, т.е. сервер не очень нагружается)
+  // и при этом они загружаются быстро (менее MIN_LAST_LOAD_TIMEмс в среднем
+  // за последнее время) или многие уже загрузились и сейчас загрузчик
+  // почти простаивает, то можно увеличить количество загружаемых изображений.
+  // Скорее всего, ни браузер, ни сервер не будет в печали.
+  if ((delay > parameters.MAX_LAST_LOAD_DELAY ||
+    this.forwardImages <= parameters.MAX_IMAGES_PER_TIME) &&
+    (time < parameters.MIN_LAST_LOAD_TIME || shortQueue)) {
     
     // увеличиваем количество планируемых изображений
-    this.FORWARD_IMAGES = (this.FORWARD_IMAGES + 1) * 1.3 | 0;
+    this.forwardImages = (this.forwardImages + 1) * parameters.LOADING_INC_RATIO | 0;
     
     // лимит кэша нельзя превышать
-    if(this.FORWARD_IMAGES > this.MAX_FORWARD_IMAGES)
-      this.FORWARD_IMAGES = this.MAX_FORWARD_IMAGES;
+    if(this.forwardImages > parameters.MAX_FORWARD_IMAGES)
+      this.forwardImages = parameters.MAX_FORWARD_IMAGES;
     
     // лимит загружаемых одновременно изображений не будем превышать
-    if(this.FORWARD_IMAGES - oldForward +
-      ImageLoader.prototype.nowLoading > this.MAX_IMAGES_PER_TIME) {
+    if(this.forwardImages - oldForward +
+      ImageLoader.prototype.nowLoading > parameters.MAX_IMAGES_PER_TIME) {
       
       // запланируем столько изображений, сколько загрузилось
       // плюс лимит одновременной загрузки
-      this.FORWARD_IMAGES = oldForward +
-        (this.MAX_IMAGES_PER_TIME - ImageLoader.prototype.nowLoading);
+      this.forwardImages = oldForward +
+        (parameters.MAX_IMAGES_PER_TIME - ImageLoader.prototype.nowLoading);
       
       // но не будем спорить со своими решениями и загружать меньше,
       // чем решили в прошлый раз
-      if(this.FORWARD_IMAGES < oldForward)
-        this.FORWARD_IMAGES = oldForward;
+      if(this.forwardImages < oldForward)
+        this.forwardImages = oldForward;
     }
   
-  // если фотографии грузятся медленно (более 5 секунд в среднем
+  // если фотографии грузятся медленно (более MAX_LAST_LOAD_TIMEмс в среднем
   // за последнее время и при этом мы не успеваем: или пользователь нажал на
-  // кнопку и нам нужно торопиться, иди он вообще дошёл до того места,
+  // кнопку и нам нужно торопиться, или он вообще дошёл до того места,
   // где картинка не прогрузилась, уменьшаем количество загружаемых изображений
-  } else if(time > 5000 && (byUser || !thisIsLoaded)) {
-    this.FORWARD_IMAGES = this.FORWARD_IMAGES / 1.5 - 1 | 0;
-    if(this.FORWARD_IMAGES <= 0) this.FORWARD_IMAGES = 1;
+  } else if(time > parameters.MAX_LAST_LOAD_TIME && (byUser || !thisIsLoaded)) {
+    this.forwardImages = this.forwardImages / parameters.LOADING_DEC_RATIO - 1 | 0;
+    if(this.forwardImages <= 0) this.forwardImages = 1;
   }
   
   // см. комментарии выше; всё аналогично, только количество "задних"
   // изображений растёт медленнее. Надеемся, что пользователь листает вперёд.
-  if ((delay > 1000 || this.BACKWARD_IMAGES <= this.MAX_IMAGES_PER_TIME) &&
-    (time < 500 || shortQueue)) {
+  if ((delay > parameters.MAX_LAST_LOAD_DELAY2 ||
+    this.backwardImages <= parameters.MAX_IMAGES_PER_TIME) &&
+    (time < parameters.MIN_LAST_LOAD_TIME2 || shortQueue)) {
     
-    this.BACKWARD_IMAGES = (this.BACKWARD_IMAGES + 1) * 1.1 | 0;
+    this.backwardImages = (this.backwardImages + 1) * parameters.LOADING_INC_RATIO2 | 0;
     
-    if(this.BACKWARD_IMAGES > this.MAX_BACKWARD_IMAGES)
-      this.BACKWARD_IMAGES = this.MAX_BACKWARD_IMAGES;
+    if(this.backwardImages > parameters.MAX_BACKWARD_IMAGES)
+      this.backwardImages = parameters.MAX_BACKWARD_IMAGES;
       
-    if(this.BACKWARD_IMAGES - oldBackward +
-      ImageLoader.prototype.nowLoading > this.MAX_IMAGES_PER_TIME) {
+    if(this.backwardImages - oldBackward +
+      ImageLoader.prototype.nowLoading > parameters.MAX_IMAGES_PER_TIME) {
       
-      this.BACKWARD_IMAGES = oldBackward +
-        (this.MAX_IMAGES_PER_TIME - ImageLoader.prototype.nowLoading);
+      this.backwardImages = oldBackward +
+        (parameters.MAX_IMAGES_PER_TIME - ImageLoader.prototype.nowLoading);
         
-      if(this.BACKWARD_IMAGES < oldBackward)
-        this.BACKWARD_IMAGES = oldBackward;
+      if(this.backwardImages < oldBackward)
+        this.backwardImages = oldBackward;
     }
-  } else if(time > 5000 && (byUser || !thisIsLoaded)) {
-    this.BACKWARD_IMAGES = this.BACKWARD_IMAGES / 1.5 - 1 | 0;
-    if(this.BACKWARD_IMAGES <= 0) this.BACKWARD_IMAGES = 1;
+  } else if(time > parameters.MAX_LAST_LOAD_TIME2 && (byUser || !thisIsLoaded)) {
+    this.backwardImages = this.backwardImages / parameters.LOADING_DEC_RATIO2 - 1 | 0;
+    if(this.backwardImages <= 0) this.backwardImages = 1;
   }
   
   // Если мы планируем подгрузить слишком много картинок, больше, чем у нас,
@@ -424,47 +508,47 @@ ImageShow.prototype.adjustImagesNumber = function(byUser) {
   // которые требуется загружать. Скажем, было у нас 5 картинок, мы загружали
   // 12 штук, потом решили загружать 7. Отменяем загрузку пяти лишних картинок -
   // отменяется загрузка ВСЕХ картинок из-за зацикливания.
-  if(this.images.length < this.FORWARD_IMAGES + this.BACKWARD_IMAGES + 1) {
+  if(this.images.length < this.forwardImages + this.backwardImages + 1) {
     // Сначала урезаем количество "задних" изображений. Вообще, когда мы
     // загружаем все изображения, не важно, "сзади" или "спереди"...
-    if(this.FORWARD_IMAGES + 1 >= this.images.length)
-      this.BACKWARD_IMAGES = 0;
+    if(this.forwardImages + 1 >= this.images.length)
+      this.backwardImages = 0;
     else
-      this.BACKWARD_IMAGES -=
-        this.FORWARD_IMAGES + this.BACKWARD_IMAGES + 1 - this.images.length;
+      this.backwardImages -=
+        this.forwardImages + this.backwardImages + 1 - this.images.length;
   }
   
   // Если урезание "задних" не помогло и мы продолжаем загружать больше,
   // чем надо, урезаем количество "передних".
-  if(this.images.length < this.FORWARD_IMAGES + this.BACKWARD_IMAGES + 1) {
-    this.FORWARD_IMAGES -=
-      this.FORWARD_IMAGES + this.BACKWARD_IMAGES + 1 - this.images.length;
+  if(this.images.length < this.forwardImages + this.backwardImages + 1) {
+    this.forwardImages -=
+      this.forwardImages + this.backwardImages + 1 - this.images.length;
   }
   
   var id = this.id;
   
   // Если в прошлый раз мы загружали больше, чем надо,
   // отменяем загрузку лишних картинок
-  if(this.FORWARD_IMAGES < oldForward)
-    for(var i = id + this.FORWARD_IMAGES + 1; i <= id + oldForward; ++ i)
+  if(this.forwardImages < oldForward)
+    for(var i = id + this.forwardImages + 1; i <= id + oldForward; ++ i)
       element(this.images, i).unload();
   
-  if(this.BACKWARD_IMAGES < oldBackward)
-    for(var i = id - this.BACKWARD_IMAGES - 1; i >= id - oldBackward; -- i)
+  if(this.backwardImages < oldBackward)
+    for(var i = id - this.backwardImages - 1; i >= id - oldBackward; -- i)
       element(this.images, i).unload();
       
   // Если в прошлый раз мы загружали меньше, чем надо,
   // начинаем загружать новые изображения
-  if(this.FORWARD_IMAGES > oldForward)
-    for(var i = id + oldForward + 1; i <= id + this.FORWARD_IMAGES; ++ i)
+  if(this.forwardImages > oldForward)
+    for(var i = id + oldForward + 1; i <= id + this.forwardImages; ++ i)
       element(this.images, i).load();
   
-  if(this.BACKWARD_IMAGES > oldBackward)
-    for(var i = id - oldBackward - 1; i >= id - this.BACKWARD_IMAGES; -- i)
+  if(this.backwardImages > oldBackward)
+    for(var i = id - oldBackward - 1; i >= id - this.backwardImages; -- i)
       element(this.images, i).load();
   
   // console.log('------------------------------------------------');
-  // for(var i = id - this.BACKWARD_IMAGES; i <= id + this.FORWARD_IMAGES; ++i) {
+  // for(var i = id - this.backwardImages; i <= id + this.forwardImages; ++i) {
     // var n = mod(i, this.images.length), img = element(this.images, i);
     // console.log('ID', n+1, n == id ? 'that' : '',
       // img.loading ? 'loading' : 'stopped', img.loaded ? 'loaded' : '-');
@@ -472,8 +556,8 @@ ImageShow.prototype.adjustImagesNumber = function(byUser) {
   
   // console.log('STATS: ' + time + 'ms x' + this.loadTime.n);
   // console.log('DELAY: ' + delay + 'ms x' + this.loadDelay.n);
-  // console.log('FWD', oldForward, this.FORWARD_IMAGES);
-  // console.log('BCK', oldBackward, this.BACKWARD_IMAGES);
+  // console.log('FWD', oldForward, this.forwardImages);
+  // console.log('BCK', oldBackward, this.backwardImages);
   
   if(!byUser) this.updateInfo();
   this._adjusting = false;
@@ -601,15 +685,6 @@ ImageShow.prototype.redraw = function() {
   this.element.style.left = ((this.width - width) / 2 + shiftX) + 'px';
 };
 
-ImageShow.prototype.RELOAD_TIMEOUT = 5000;
-ImageShow.prototype.FORWARD_IMAGES = 1;
-ImageShow.prototype.BACKWARD_IMAGES = 0;
-ImageShow.prototype.IMAGES_PER_TIME = 2;
-ImageShow.prototype.MAX_FORWARD_IMAGES = 50;
-ImageShow.prototype.MAX_BACKWARD_IMAGES = 10;
-ImageShow.prototype.MAX_IMAGES_PER_TIME = 5;
-ImageShow.defaultImages = {};
-
 // Обновление списка изображений.
 // urls - массив адресов изображений
 ImageShow.prototype.update = function(urls){
@@ -654,12 +729,12 @@ ImageShow.prototype.shift = function(sx_px, sy_px) {
 };
 
 ImageShow.prototype.zoomIn = function() {
-  this.image.setScale(this.image.scale * 1.3);
+  this.image.setScale(this.image.scale * parameters.ZOOM_SCALE_RATIO);
   this.redraw();
 };
 
 ImageShow.prototype.zoomOut = function() {
-  this.image.setScale(this.image.scale / 1.3);
+  this.image.setScale(this.image.scale / parameters.ZOOM_SCALE_RATIO);
   this.redraw();
 };
 
@@ -704,8 +779,8 @@ ImageShow.prototype.goTo = function(n) {
   // TODO: rewrite
   // Ленивый способ: сначала всё отменяем, потом всё нужное загружаем
   this.images.forEach(function(img){ img.unload(); });
-  var i = this.id - this.BACKWARD_IMAGES;
-  n = this.id + this.FORWARD_IMAGES;
+  var i = this.id - this.backwardImages;
+  n = this.id + this.forwardImages;
   for(; i <= n; ++i) element(this.images, i).load();
   
   // Если изображение не загрузилось, просмотрщик разберётся
@@ -717,10 +792,10 @@ ImageShow.prototype.previous = function() {
   
   // Если загружается меньше изображений, чем все, отменяем загрузку того, что
   // с "переднего" конца и добавляем загрузку одного с "заднего" конца
-  if(this.images.length > this.BACKWARD_IMAGES + this.FORWARD_IMAGES + 1){
-    element(this.images, this.id + this.FORWARD_IMAGES).unload();
+  if(this.images.length > this.backwardImages + this.forwardImages + 1){
+    element(this.images, this.id + this.forwardImages).unload();
     -- this.id;
-    element(this.images, this.id - this.BACKWARD_IMAGES).load();
+    element(this.images, this.id - this.backwardImages).load();
   } else {
     -- this.id;
   }
@@ -733,10 +808,10 @@ ImageShow.prototype.next = function() {
   
   // Если загружается меньше изображений, чем все, отменяем загрузку того, что
   // с "заднего" конца и добавляем загрузку одного с "переднего" конца
-  if(this.images.length > this.BACKWARD_IMAGES + this.FORWARD_IMAGES + 1){
-    element(this.images, this.id - this.BACKWARD_IMAGES).unload();
+  if(this.images.length > this.backwardImages + this.forwardImages + 1){
+    element(this.images, this.id - this.backwardImages).unload();
     ++ this.id;
-    element(this.images, this.id + this.FORWARD_IMAGES).load();
+    element(this.images, this.id + this.forwardImages).load();
   } else {
     ++ this.id;
   }
@@ -763,7 +838,7 @@ ImageShow.prototype.stopSlideshow = function() {
 };
 
 ImageShow.prototype.setSlideshowDelay = function(n){
-  this.slideshowDelay = n * 1000 | 0;
+  this.slideshowDelay = n * SEC | 0;
 };
 
 (function main(){
@@ -772,11 +847,13 @@ ImageShow.prototype.setSlideshowDelay = function(n){
   var show = new ImageShow(UI.picture, UI.info, window.innerWidth, window.innerHeight);
   show.defaultImages = getImages(getElement('default-images'), true);
   show.show(show.defaultImages.logo);
-  show.setSlideshowDelay(loadValue('slideshow-delay', UI.slideshowDelay));
+  show.setSlideshowDelay(loadValue('slideshow-delay', UI.slideshowDelay,
+    parameters.DEFAULT_SLIDESHOW_DELAY / SEC));
   
   UI.update = getElements('update');
   
-  var listUpdateDelay = loadValue('update-delay', UI.updateDelay);
+  var listUpdateDelay = loadValue('update-delay', UI.updateDelay,
+    parameters.DEFAULT_LIST_UPDATE_DELAY / SEC);
   var imageNumber = loadValue('image-number', UI.imgNumber);
   
   var fileListPath = location.search.substring(1);
@@ -787,13 +864,13 @@ ImageShow.prototype.setSlideshowDelay = function(n){
     try{
       filelist.contentDocument;
     }catch(e){
-      setTimeout(updateFileList, RELOAD_TIMEOUT);
+      setTimeout(updateFileList, parameters.RELOAD_TIMEOUT);
       return;
     }
     
     var urls = toArray(filelist.contentDocument.getElementsByTagName('a'))
       .filter(function(a){
-        return /(.jpg|.png|.gif|.jpeg)$/i.test(a.href);
+        return parameters.EXTENSIONS_RE.test(a.href);
       })
       .map(function(a){
         return a.href;
@@ -801,12 +878,12 @@ ImageShow.prototype.setSlideshowDelay = function(n){
     
     show.update(urls);
     UI.update.forEach(function(b){ b.disabled = false; });
-    setTimeout(updateFileList, listUpdateDelay * 1000);
+    setTimeout(updateFileList, listUpdateDelay * SEC);
   });
   
   filelist.addEventListener('error', function(){
     UI.update.forEach(function(b){ b.disabled = false; });
-    setTimeout(updateFileList, RELOAD_TIMEOUT);
+    setTimeout(updateFileList, parameters.RELOAD_TIMEOUT);
   });
   
   function updateFileList() {
@@ -871,7 +948,7 @@ ImageShow.prototype.setSlideshowDelay = function(n){
     window.addEventListener('mousedown', function(event) {
       mouseX0 = event.clientX; mouseY0 = event.clientY;
       mouseX = event.clientX; mouseY = event.clientY;
-      console.log('mousedown',event);
+      // console.log('mousedown',event);
       down = true;
     });
     
@@ -880,12 +957,12 @@ ImageShow.prototype.setSlideshowDelay = function(n){
       event.preventDefault();
       show.shift(event.clientX - mouseX, event.clientY - mouseY);
       mouseX = event.clientX; mouseY = event.clientY;
-      console.log('mousemove',event);
+      // console.log('mousemove',event);
     });
     
     window.addEventListener('mouseup', function(event) {
       down = false;
-      console.log('mouseup',event);
+      // console.log('mouseup',event);
     });
   
   })();
